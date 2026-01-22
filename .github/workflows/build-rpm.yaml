@@ -9,11 +9,6 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: fedora:42
-    env:
-      VV2V_VERSION: "2.7.17"
-      SRPM_RELEASE: "1.fc42"
-      TARBALL: "virt-v2v-2.7.17.tar.gz"
-      SRPM_URL: "https://kojipkgs.fedoraproject.org/packages/virt-v2v/2.7.17/1.fc42/src/virt-v2v-2.7.17-1.fc42.src.rpm"
 
     steps:
       - name: Install git first
@@ -27,7 +22,21 @@ jobs:
       - name: Install build dependencies
         run: |
           dnf install -y rpm-build rpmdevtools git sqlite perl-hivex \
-                          autoconf automake libtool dnf-plugins-core cpio curl xorriso
+                          autoconf automake libtool curl cpio
+
+      - name: Download & extract 2.7.17 SRPM for builddep
+        run: |
+          cd /root
+          curl -L -o virt-v2v-2.7.17-1.fc42.src.rpm \
+            "https://kojipkgs.fedoraproject.org/packages/virt-v2v/2.7.17/1.fc42/src/virt-v2v-2.7.17-1.fc42.src.rpm"
+
+          mkdir -p /tmp/srpm-extract
+          cd /tmp/srpm-extract
+          rpm2cpio /root/virt-v2v-*.src.rpm | cpio -idmv
+
+      - name: Install build dependencies from spec
+        run: |
+          dnf builddep -y /tmp/srpm-extract/virt-v2v.spec
 
       - name: Setup rpmbuild tree under /root
         run: |
@@ -44,29 +53,18 @@ jobs:
       - name: Verify tarball name
         working-directory: ${{ github.workspace }}
         run: |
-          ls -lh "$TARBALL"
+          ls -lh virt-v2v-2.7.17.tar.gz
 
-      - name: Download & extract upstream SRPM
+      - name: Move spec and sources to build tree
         run: |
-          cd /root
-          curl -L -o "/root/virt-v2v-$VV2V_VERSION-$SRPM_RELEASE.src.rpm" "$SRPM_URL"
-
-          mkdir -p /tmp/srpm-extract
           cd /tmp/srpm-extract
-          rpm2cpio "/root/virt-v2v-$VV2V_VERSION-$SRPM_RELEASE.src.rpm" | cpio -idmv
-          
-          # Move spec and sources to build tree
           mv virt-v2v.spec /root/rpmbuild/SPECS/
           cp *.keyring /root/rpmbuild/SOURCES/ 2>/dev/null || true
           cp *.sig     /root/rpmbuild/SOURCES/ 2>/dev/null || true
 
-      - name: Install SRPM build dependencies
-        run: |
-          dnf builddep -y /root/rpmbuild/SPECS/virt-v2v.spec
-
       - name: Copy patched tarball to SOURCES
         run: |
-          cp "$GITHUB_WORKSPACE/$TARBALL" /root/rpmbuild/SOURCES/
+          cp /__w/virt-v2v/virt-v2v/virt-v2v-2.7.17.tar.gz /root/rpmbuild/SOURCES/
        
       - name: Patch spec file
         run: |
@@ -76,13 +74,9 @@ jobs:
           sed -i 's/^\([[:space:]]*\)%{gpgverify}/#\1%{gpgverify}/' $SPEC_FILE
           sed -i 's/%global verify_tarball_signature 1/%global verify_tarball_signature 0/' $SPEC_FILE || true
 
-          # 2. Force Version to 2.7.13
-          sed -i "s/^Version:.*/Version: $VV2V_VERSION/"  $SPEC_FILE
+          # 2. Force Version to 2.7.17
+          sed -i 's/^Version:.*/Version: 2.7.17/'  $SPEC_FILE
           sed -i 's/^Release:.*/Release: 1.fc42/' $SPEC_FILE
-
-          # Ensure the expected Source0 filename exists in SOURCES.
-          EXPECTED_SOURCE="$(rpmspec -P "$SPEC_FILE" | awk '/^Source0:/ {print $2; exit}' | xargs basename)"
-          cp "$GITHUB_WORKSPACE/$TARBALL" "/root/rpmbuild/SOURCES/$EXPECTED_SOURCE"
 
           # 3. Remove files that are missing in our build (oVirt support)
           sed -i '/virt-v2v-open/d' $SPEC_FILE
@@ -101,5 +95,5 @@ jobs:
       - name: Upload built RPMs
         uses: actions/upload-artifact@v4
         with:
-          name: virt-v2v-${{ env.VV2V_VERSION }}-rpm
+          name: virt-v2v-2.7.17-rpm
           path: /root/rpmbuild/RPMS/x86_64/*.rpm
