@@ -27,7 +27,7 @@ jobs:
       - name: Install build dependencies
         run: |
           dnf install -y rpm-build rpmdevtools git sqlite perl-hivex \
-                          autoconf automake libtool dnf-plugins-core cpio curl
+                          autoconf automake libtool dnf-plugins-core cpio curl xorriso
 
       - name: Setup rpmbuild tree under /root
         run: |
